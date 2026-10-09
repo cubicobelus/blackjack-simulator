@@ -583,6 +583,8 @@ let bettingStyle = 'martingale'; // 'martingale' | 'flat' | 'custom'
 let blackjackPayout = 1.5; // 2 = 2:1, 1.5 = 3:2, 1.2 = 6:5
 let baseBet = 0.25;
 let insuranceTaken = false;
+let insuranceNet = 0; // insurance win/loss waiting to be folded into this round's chart delta
+let dealerPeeked = false; // dealer has checked the hole card for blackjack this round
 let gameType = 'machine'; // 'machine' = reshuffles every hand, 'table' = persistent shoe
 let betCapped = false;
 let splitHands = null; // null when not in a split round, else [{cards, bet, doubled, done}, {...}]
@@ -798,6 +800,8 @@ function startRound() {
   roundActive = true;
   doubledThisRound = false;
   insuranceTaken = false;
+  dealerPeeked = false;
+  insuranceNet = 0;
   splitHands = null;
   activeSplit = 0;
   firstDecisionPending = true;
@@ -847,7 +851,8 @@ function settleHand(outcome, cards, bet, allowBonus, labelPrefix) {
   handsPlayed++;
   updateEstimatedRecord();
   bankrollHistory.push(bankroll);
-  handDeltas.push(netChange);
+  handDeltas.push(netChange + insuranceNet); // fold any insurance result into the hand it belongs to
+  insuranceNet = 0;
   logLine(`${labelPrefix}Hand ${handsPlayed}: player ${handTotal(cards).total}, dealer ${handTotal(dealerCards).total} — ${resultText} (bankroll ${money(bankroll)})`, resultClass);
   el('table-area').classList.remove('result-win', 'result-loss', 'result-push');
   el('table-area').classList.add('result-' + resultKind);
@@ -907,6 +912,21 @@ function dealerPlay() {
   }
 }
 
+// Dealer checks the hole card when showing a ten or an Ace. If it's blackjack the round ends
+// immediately, before the player can double or split. deferForInsurance holds an Ace peek until
+// the player's first action so insurance can still be taken. Returns true if the round ended.
+function dealerPeek(deferForInsurance) {
+  if (dealerPeeked || !roundActive) return false;
+  const upVal = cardValue(dealerCards[0]);
+  if (upVal < 10) return false;
+  if (deferForInsurance && upVal === 11) return false;
+  dealerPeeked = true;
+  if (!isBlackjack(dealerCards)) return false;
+  logLine('Dealer peeks: blackjack.');
+  resolveAfterPlayerDone();
+  return true;
+}
+
 function resolveAfterPlayerDone() {
   countCard(dealerCards[1]); // hole card is revealed at showdown
   const pTotal = handTotal(playerCards).total;
@@ -919,6 +939,7 @@ function resolveAfterPlayerDone() {
 
   if (pBJ && !dBJ) { settleRound('blackjack'); return; }
   if (pBJ && dBJ) { settleRound('push'); return; }
+  if (dBJ) { settleRound('loss'); return; } // dealer blackjack beats any non-blackjack 21
   if (dTotal > 21) { settleRound('win'); return; }
   if (dTotal > pTotal) { settleRound('loss'); return; }
   if (dTotal < pTotal) { settleRound('win'); return; }
@@ -984,6 +1005,10 @@ el('btn-deal').addEventListener('click', () => {
     el('btn-deal').disabled = false;
     return;
   }
+  if (dealerPeek(gameType === 'table')) {
+    setControlsForRoundEnd(false);
+    return;
+  }
   el('btn-deal').disabled = true;
   el('btn-hit').disabled = false;
   el('btn-stand').disabled = false;
@@ -993,6 +1018,7 @@ el('btn-deal').addEventListener('click', () => {
 
 el('btn-split').addEventListener('click', () => {
   if (el('btn-split').disabled) return;
+  if (dealerPeek(false)) { setControlsForRoundEnd(false); return; }
   if (firstDecisionPending) {
     gradeDecision(pairSplitCorrect === true);
     setFeedback(pairSplitCorrect === true ? '✓ Optimal' : '✗ Best move: Don\u2019t split', pairSplitCorrect === true);
@@ -1020,6 +1046,7 @@ el('btn-split').addEventListener('click', () => {
 });
 
 el('btn-hit').addEventListener('click', () => {
+  if (dealerPeek(false)) { setControlsForRoundEnd(false); return; }
   const canDouble = !el('btn-double').disabled;
   if (firstDecisionPending && pairSplitCorrect === true) {
     setFeedback('✗ Best move: Split', false);
@@ -1048,6 +1075,7 @@ el('btn-hit').addEventListener('click', () => {
 });
 
 el('btn-stand').addEventListener('click', () => {
+  if (dealerPeek(false)) { setControlsForRoundEnd(false); return; }
   const canDouble = !el('btn-double').disabled;
   if (firstDecisionPending && pairSplitCorrect === true) {
     setFeedback('✗ Best move: Split', false);
@@ -1070,14 +1098,17 @@ el('btn-stand').addEventListener('click', () => {
 el('btn-insurance').addEventListener('click', () => {
   if (insuranceTaken || el('btn-insurance').disabled) return;
   insuranceTaken = true;
+  dealerPeeked = true; // the dealer checks the hole card right after insurance is placed
   const insuranceBet = Math.round((currentBet / 2) * 100) / 100;
   const dealerHasBJ = isBlackjack(dealerCards);
   if (dealerHasBJ) {
     const netGain = insuranceBet * 2;
     bankroll += netGain;
+    insuranceNet += netGain;
     logLine(`Insurance: dealer had blackjack — insurance pays 2:1 (+${money(netGain)})`, 'win');
   } else {
     bankroll -= insuranceBet;
+    insuranceNet -= insuranceBet;
     logLine(`Insurance: dealer did not have blackjack — insurance lost (-${money(insuranceBet)})`, 'loss');
   }
   updateStats();
@@ -1090,6 +1121,7 @@ el('btn-insurance').addEventListener('click', () => {
 });
 
 el('btn-double').addEventListener('click', () => {
+  if (dealerPeek(false)) { setControlsForRoundEnd(false); return; }
   if (firstDecisionPending && pairSplitCorrect === true) {
     setFeedback('✗ Best move: Split', false);
     gradeDecision(false);
@@ -1176,6 +1208,7 @@ function playSplitHandsAuto() {
 function playOneHandAuto() {
   if (!startRound()) return false;
   if (isBlackjack(playerCards)) { resolveAfterPlayerDone(); return true; }
+  if (dealerPeek(false)) return true; // auto never takes insurance, so peek straight away
 
   // Table-mode pair splitting — never offered on a Machine
   if (gameType === 'table' && cardValue(playerCards[0]) === cardValue(playerCards[1]) && bankroll >= currentBet * 2 - 0.001) {
