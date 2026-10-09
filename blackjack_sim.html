@@ -320,7 +320,7 @@
   }
   .chart-table td { color: var(--white); background: var(--panel); font-weight: 600; }
   .chart-table td.c-s { background: var(--gold); color: var(--black); }
-  .chart-table td.c-d, .chart-table td.c-y, .chart-table td.c-sur { background: var(--green); color: var(--black); }
+  .chart-table td.c-d, .chart-table td.c-y { background: var(--green); color: var(--black); }
   .chart-table td.c-ds, .chart-table td.c-yn { background: #2a8f8f; color: var(--black); }
   .chart-table td.c-h, .chart-table td.c-n { background: var(--panel); color: var(--white); }
   .chart-table td.c-blank { background: var(--panel); border-color: var(--line); }
@@ -347,7 +347,7 @@
   .chart-legend-item { display: flex; align-items: center; gap: 8px; }
   .chart-swatch { display: inline-block; width: 16px; height: 16px; border: 1px solid var(--line); flex-shrink: 0; }
   .chart-swatch.c-s { background: var(--gold); }
-  .chart-swatch.c-d, .chart-swatch.c-y, .chart-swatch.c-sur { background: var(--green); }
+  .chart-swatch.c-d, .chart-swatch.c-y { background: var(--green); }
   .chart-swatch.c-ds, .chart-swatch.c-yn { background: #2a8f8f; }
   .chart-swatch.c-h, .chart-swatch.c-n { background: var(--panel2); }
 </style>
@@ -477,8 +477,6 @@
     <div id="chart-soft"></div>
     <div class="chart-section-label">Pair Splitting</div>
     <div id="chart-pairs"></div>
-    <div class="chart-section-label">Surrender</div>
-    <div id="chart-surrender"></div>
     <div class="chart-note">Insurance or Even Money: Don't Take</div>
     <div class="chart-legend">
       <div class="chart-legend-item"><span class="chart-swatch c-h"></span> H &mdash; Hit</div>
@@ -488,7 +486,6 @@
       <div class="chart-legend-item"><span class="chart-swatch c-n"></span> N &mdash; Don't split the pair</div>
       <div class="chart-legend-item"><span class="chart-swatch c-y"></span> Y &mdash; Split the pair</div>
       <div class="chart-legend-item"><span class="chart-swatch c-yn"></span> Y/N &mdash; Split only if double-after-split is offered</div>
-      <div class="chart-legend-item"><span class="chart-swatch c-sur"></span> SUR &mdash; Surrender if allowed, otherwise the row's next-best play</div>
     </div>
   </div>
 </div>
@@ -1503,11 +1500,6 @@ const PAIRS_DATA = [
   ['3,3','Y/N','Y/N','Y','Y','Y','Y','N','N','N','N'],
   ['2,2','Y/N','Y/N','Y','Y','Y','Y','N','N','N','N'],
 ];
-const SURRENDER_DATA = [
-  ['16','','','','','','','','SUR','SUR','SUR'],
-  ['15','','','','','','','','','SUR',''],
-  ['14','','','','','','','','','',''],
-];
 
 function chartCellClass(code) {
   switch (code) {
@@ -1518,7 +1510,6 @@ function chartCellClass(code) {
     case 'N': return 'c-n';
     case 'Y': return 'c-y';
     case 'Y/N': return 'c-yn';
-    case 'SUR': return 'c-sur';
     default: return 'c-blank';
   }
 }
@@ -1537,7 +1528,6 @@ function buildChartTable(rows) {
 el('chart-hard').innerHTML = buildChartTable(HARD_TOTALS_DATA);
 el('chart-soft').innerHTML = buildChartTable(SOFT_TOTALS_DATA);
 el('chart-pairs').innerHTML = buildChartTable(PAIRS_DATA);
-el('chart-surrender').innerHTML = buildChartTable(SURRENDER_DATA);
 
 document.querySelectorAll('.toggle-btn[data-style]').forEach(btn => {
   btn.addEventListener('click', () => {
