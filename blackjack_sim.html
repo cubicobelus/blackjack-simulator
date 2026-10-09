@@ -608,6 +608,9 @@ let autoRunning = false;
 
 const el = id => document.getElementById(id);
 
+// Wager on the current hand: base bet, doubled if the player doubled down.
+function activeBet() { return doubledThisRound ? currentBet * 2 : currentBet; }
+
 function money(n) {
   const sign = n < 0 ? '-' : '';
   return sign + '$' + Math.abs(n).toFixed(2);
@@ -619,7 +622,7 @@ function updateStats() {
   const netEl = el('stat-net');
   netEl.textContent = money(net);
   netEl.className = 'value ' + (net > 0 ? 'pos' : net < 0 ? 'neg' : '');
-  el('stat-bet').textContent = betCapped ? 'Max Bet' : money(currentBet);
+  el('stat-bet').textContent = betCapped ? 'Max Bet' : money(activeBet());
   el('stat-hands').textContent = handsPlayed;
   el('stat-record').textContent = `${wins}-${losses}-${pushes}`;
   el('stat-estimated-record').textContent = `${estimatedWins}-${estimatedLosses}-${estimatedPushes}`;
@@ -852,7 +855,8 @@ function settleHand(outcome, cards, bet, allowBonus, labelPrefix) {
 
 function settleRound(outcome) {
   roundActive = false;
-  const { resultKind } = settleHand(outcome, playerCards, currentBet, true, '');
+  const { resultKind } = settleHand(outcome, playerCards, activeBet(), true, '');
+  doubledThisRound = false; // the double applied to this hand only; currentBet stays the base bet
   nextBetAfterResult(resultKind);
   updateStats();
   renderHands(false);
@@ -1105,7 +1109,6 @@ el('btn-double').addEventListener('click', () => {
     finishActiveSplitHand();
   } else {
     doubledThisRound = true;
-    currentBet = currentBet * 2;
     updateStats();
     playerCards.push(c);
     countCard(c);
@@ -1188,7 +1191,6 @@ function playOneHandAuto() {
     if (decision === 'stand') break;
     if (decision === 'double' && canDouble && playerCards.length === 2) {
       doubledThisRound = true;
-      currentBet = currentBet * 2;
       const c = drawCard();
       playerCards.push(c);
       countCard(c);
