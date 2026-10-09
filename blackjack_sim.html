@@ -191,6 +191,11 @@
     flex-shrink: 0;
   }
   .card.red { color: var(--red); }
+  .cards.multi { gap: 12px; }
+  .split-hand { border: 1px solid transparent; padding: 6px 8px 8px; }
+  .split-hand.active { border-color: var(--gold); }
+  .split-hand .cards { min-height: 0; }
+  .split-label { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); opacity: 0.85; margin-bottom: 6px; }
   .card.hidden { background: repeating-linear-gradient(45deg, #1e1e1e, #1e1e1e 6px, var(--black) 6px, var(--black) 12px); border: 1px solid var(--gold); }
   @keyframes deal {
     from { transform: translateY(-20px); opacity: 0; }
@@ -461,7 +466,7 @@
   <div class="log" id="log"></div>
 
   <div class="footer-note">
-    Game info: single hand per round, 6-deck shoe. The dealer stands on all 17s and checks for blackjack when showing a ten or an Ace. Machine mode reshuffles before every hand; Table mode keeps one shoe and reshuffles at about 75% penetration. Blackjack payout is selectable (2:1, 3:2, or 6:5). Martingale mode doubles the bet after a loss and resets to your chosen denomination after a win; a push repeats the same bet. Flat mode keeps the base bet constant regardless of outcome. A double-down win pays even money on the doubled bet (not double-counted). Splitting is available in Table mode only, one split per hand, split Aces get one card each. Auto and Fast modes always use standard basic strategy. Manual mode shows whether your decisions matched basic strategy.
+    Game info: single hand per round, 6-deck shoe. The dealer stands on all 17s and checks for blackjack when showing a ten or an Ace. Machine mode reshuffles before every hand; Table mode keeps one shoe and reshuffles at about 75% penetration. Blackjack payout is selectable (2:1, 3:2, or 6:5). Martingale mode doubles the bet after a loss and resets to your chosen denomination after a win; a push repeats the same bet. Flat mode keeps the base bet constant regardless of outcome. A double-down win pays even money on the doubled bet (not double-counted). Splitting is available in Table mode only: pairs can be re-split up to 4 hands, doubling after a split is allowed, and split Aces get one card each and can’t be re-split. Auto and Fast modes always use standard basic strategy. Manual mode shows whether your decisions matched basic strategy.
   </div>
   </div>
 
@@ -494,6 +499,7 @@ const SUITS = ['♠','♥','♦','♣'];
 const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 let shoe = [];
 const NUM_DECKS = 6;
+const MAX_SPLIT_HANDS = 4;
 const CUT_CARD_REMAINING = Math.round(NUM_DECKS * 52 * 0.25); // table reshuffles once ~75% of the shoe has been dealt
 
 function buildShoe() {
@@ -663,9 +669,27 @@ function renderHands(hideDealerHole) {
   const dc = el('dealer-cards'); dc.innerHTML = '';
   dealerCards.forEach((c, i) => dc.appendChild(renderCard(c, hideDealerHole && i === 1)));
   const pc = el('player-cards'); pc.innerHTML = '';
-  playerCards.forEach(c => pc.appendChild(renderCard(c)));
-
-  el('player-total').textContent = playerCards.length ? handTotal(playerCards).total : '';
+  if (splitHands) {
+    pc.className = 'cards multi';
+    splitHands.forEach((h, i) => {
+      const box = document.createElement('div');
+      box.className = 'split-hand' + (hideDealerHole && i === activeSplit ? ' active' : '');
+      const label = document.createElement('div');
+      label.className = 'split-label';
+      label.textContent = `Hand ${i + 1} · ${handTotal(h.cards).total} · ${money(h.bet)}`;
+      const row = document.createElement('div');
+      row.className = 'cards';
+      h.cards.forEach(c => row.appendChild(renderCard(c)));
+      box.appendChild(label);
+      box.appendChild(row);
+      pc.appendChild(box);
+    });
+    el('player-total').textContent = `${splitHands.length} hands`;
+  } else {
+    pc.className = 'cards';
+    playerCards.forEach(c => pc.appendChild(renderCard(c)));
+    el('player-total').textContent = playerCards.length ? handTotal(playerCards).total : '';
+  }
   el('dealer-total').textContent = (dealerCards.length && !hideDealerHole) ? handTotal(dealerCards).total : (dealerCards.length ? cardValue(dealerCards[0]) + ' + ?' : '');
 }
 
@@ -971,39 +995,90 @@ function updateInsuranceButton() {
   if (gameType !== 'table') { btn.style.display = 'none'; return; }
   btn.style.display = 'inline-block';
   const dealerShowsAce = dealerCards.length > 0 && dealerCards[0].rank === 'A';
-  btn.disabled = !dealerShowsAce || insuranceTaken || !roundActive;
+  btn.disabled = !dealerShowsAce || insuranceTaken || dealerPeeked || !roundActive;
+}
+
+// Money currently on the table for this round, and whether the bankroll can cover `extra` more.
+function wagered() { return splitHands ? splitHands.reduce((t, h) => t + h.bet, 0) : currentBet; }
+function activeHandBet() { return splitHands ? splitHands[activeSplit].bet : currentBet; }
+function canAfford(extra) { return bankroll >= wagered() + extra - 0.001; }
+
+// Can the hand being played right now be split (or re-split)? Table mode only, up to MAX_SPLIT_HANDS.
+function canSplitActive() {
+  if (gameType !== 'table' || !roundActive) return false;
+  if ((splitHands ? splitHands.length : 1) >= MAX_SPLIT_HANDS) return false;
+  if (playerCards.length !== 2 || cardValue(playerCards[0]) !== cardValue(playerCards[1])) return false;
+  return canAfford(activeHandBet());
+}
+
+function pairShouldSplit(cards) {
+  const rankBucket = cardValue(cards[0]) === 10 ? '10' : cards[0].rank;
+  const dealerUpVal = dealerCards[0].rank === 'A' ? 11 : cardValue(dealerCards[0]);
+  return shouldSplitPair(rankBucket, dealerUpVal);
 }
 
 function updateSplitButton() {
   const btn = el('btn-split');
   if (gameType !== 'table') { btn.style.display = 'none'; return; }
   btn.style.display = 'inline-block';
-  const eligible = roundActive && !splitHands && playerCards.length === 2 &&
-    cardValue(playerCards[0]) === cardValue(playerCards[1]) &&
-    bankroll >= currentBet * 2 - 0.001;
-  btn.disabled = !eligible;
+  btn.disabled = !canSplitActive();
+}
+
+// Splits the hand being played into two, dealing one new card to each. Pure game state, no UI.
+// Split Aces get exactly one card each and are finished (no re-splitting Aces, no hitting).
+function doSplit() {
+  if (!splitHands) {
+    splitHands = [{ cards: playerCards, bet: currentBet, doubled: false, done: false }];
+    activeSplit = 0;
+  }
+  const hand = splitHands[activeSplit];
+  const [c1, c2] = hand.cards;
+  const n1 = drawCard(), n2 = drawCard();
+  countCard(n1); countCard(n2);
+  hand.cards = [c1, n1];
+  const second = { cards: [c2, n2], bet: hand.bet, doubled: false, done: false };
+  splitHands.splice(activeSplit + 1, 0, second);
+  if (c1.rank === 'A') { hand.done = true; second.done = true; }
+  playerCards = hand.cards;
 }
 
 function loadActiveSplitHand() {
-  playerCards = splitHands[activeSplit].cards;
+  const hand = splitHands[activeSplit];
+  playerCards = hand.cards;
   doubledThisRound = false;
-  el('message').textContent = `Split hand ${activeSplit + 1} of 2 — Bet: ${money(splitHands[activeSplit].bet)}`;
+  if (handTotal(playerCards).total === 21) { // nothing left to decide
+    hand.done = true;
+    logLine(`Split hand ${activeSplit + 1}: 21, stands automatically.`);
+    renderHands(true);
+    playNextSplitHand();
+    return;
+  }
+  const canResplit = canSplitActive();
+  pairSplitCorrect = canResplit ? pairShouldSplit(playerCards) : null; // grade a possible re-split like a first-move pair
+  firstDecisionPending = canResplit;
+  el('message').textContent = `Split hand ${activeSplit + 1} of ${splitHands.length} — Bet: ${money(hand.bet)}`;
   renderHands(true);
   el('btn-hit').disabled = false;
   el('btn-stand').disabled = false;
-  el('btn-double').disabled = !(bankroll >= splitHands[activeSplit].bet * 2 - 0.001);
-  el('btn-split').disabled = true;
+  el('btn-double').disabled = !canAfford(hand.bet);
+  updateSplitButton();
+}
+
+// Moves on to the next unfinished split hand, or settles the round when every hand is done.
+function playNextSplitHand() {
+  const next = splitHands.findIndex(h => !h.done);
+  if (next === -1) {
+    resolveSplitRound();
+    setControlsForRoundEnd(false);
+    return;
+  }
+  activeSplit = next;
+  loadActiveSplitHand();
 }
 
 function finishActiveSplitHand() {
   splitHands[activeSplit].done = true;
-  if (activeSplit === 0) {
-    activeSplit = 1;
-    loadActiveSplitHand();
-  } else {
-    resolveSplitRound();
-    setControlsForRoundEnd(false);
-  }
+  playNextSplitHand();
 }
 
 // ---------- Manual mode ----------
@@ -1035,25 +1110,9 @@ el('btn-split').addEventListener('click', () => {
     setFeedback(pairSplitCorrect === true ? '✓ Optimal' : '✗ Best move: Don\u2019t split', pairSplitCorrect === true);
     firstDecisionPending = false;
   }
-  const isAces = playerCards[0].rank === 'A';
-  const c1 = playerCards[0], c2 = playerCards[1];
-  const n1 = drawCard(), n2 = drawCard();
-  countCard(n1); countCard(n2);
-  splitHands = [
-    { cards: [c1, n1], bet: currentBet, doubled: false, done: false },
-    { cards: [c2, n2], bet: currentBet, doubled: false, done: false }
-  ];
-  activeSplit = 0;
   el('btn-split').disabled = true;
-  if (isAces) {
-    // split aces: exactly one card each, no further action
-    splitHands[0].done = true;
-    splitHands[1].done = true;
-    resolveSplitRound();
-    setControlsForRoundEnd(false);
-  } else {
-    loadActiveSplitHand();
-  }
+  doSplit();
+  playNextSplitHand();
 });
 
 el('btn-hit').addEventListener('click', () => {
@@ -1074,6 +1133,8 @@ el('btn-hit').addEventListener('click', () => {
   countCard(c);
   renderHands(true);
   el('btn-double').disabled = true;
+  updateSplitButton();
+  updateInsuranceButton();
   const { total } = handTotal(playerCards);
   if (total >= 21) {
     if (splitHands) {
@@ -1176,40 +1237,40 @@ function shouldSplitPair(rank, dealerUpVal) {
   return false;
 }
 
-function playSplitHandsAuto() {
-  const isAces = playerCards[0].rank === 'A';
-  const c1 = playerCards[0], c2 = playerCards[1];
-  const n1 = drawCard(), n2 = drawCard();
-  countCard(n1); countCard(n2);
-  splitHands = [
-    { cards: [c1, n1], bet: currentBet, doubled: false, done: false },
-    { cards: [c2, n2], bet: currentBet, doubled: false, done: false }
-  ];
-  activeSplit = 0;
+// Plays one hand (split or not) out by basic strategy; doubles the hand's bet if it doubles down.
+function playOutAutoHand(hand) {
+  playerCards = hand.cards;
+  let canDouble = canAfford(hand.bet);
+  while (true) {
+    const decision = basicStrategyDecision(playerCards, dealerCards[0], canDouble && playerCards.length === 2);
+    if (decision === 'stand') break;
+    if (decision === 'double' && canDouble && playerCards.length === 2) {
+      hand.bet *= 2;
+      hand.doubled = true;
+      const c = drawCard();
+      playerCards.push(c);
+      countCard(c);
+      break;
+    }
+    const c = drawCard();
+    playerCards.push(c);
+    countCard(c);
+    canDouble = false;
+    if (handTotal(playerCards).total >= 21) break;
+  }
+}
 
-  if (!isAces) {
-    for (let i = 0; i < 2; i++) {
-      activeSplit = i;
-      playerCards = splitHands[i].cards;
-      let canDouble = bankroll >= splitHands[i].bet * 2 - 0.001;
-      while (true) {
-        const decision = basicStrategyDecision(playerCards, dealerCards[0], canDouble && playerCards.length === 2);
-        if (decision === 'stand') break;
-        if (decision === 'double' && canDouble && playerCards.length === 2) {
-          splitHands[i].bet *= 2;
-          splitHands[i].doubled = true;
-          const c = drawCard();
-          playerCards.push(c);
-          countCard(c);
-          break;
-        }
-        const c = drawCard();
-        playerCards.push(c);
-        countCard(c);
-        canDouble = false;
-        if (handTotal(playerCards).total >= 21) break;
-      }
-      splitHands[i].done = true;
+function playSplitHandsAuto() {
+  splitHands = [{ cards: playerCards, bet: currentBet, doubled: false, done: false }];
+  // the list grows as pairs are re-split, so re-check its length every pass
+  for (let i = 0; i < splitHands.length; i++) {
+    activeSplit = i;
+    const hand = splitHands[i];
+    while (!hand.done) {
+      playerCards = hand.cards;
+      if (canSplitActive() && pairShouldSplit(playerCards)) { doSplit(); continue; }
+      playOutAutoHand(hand);
+      hand.done = true;
     }
   }
   resolveSplitRound();
@@ -1222,13 +1283,7 @@ function playOneHandAuto() {
   if (dealerPeek(false)) return true; // auto never takes insurance, so peek straight away
 
   // Table-mode pair splitting — never offered on a Machine
-  if (gameType === 'table' && cardValue(playerCards[0]) === cardValue(playerCards[1]) && bankroll >= currentBet * 2 - 0.001) {
-    const rankBucket = cardValue(playerCards[0]) === 10 ? '10' : playerCards[0].rank;
-    const dealerUpVal = dealerCards[0].rank === 'A' ? 11 : cardValue(dealerCards[0]);
-    if (shouldSplitPair(rankBucket, dealerUpVal)) {
-      return playSplitHandsAuto();
-    }
-  }
+  if (canSplitActive() && pairShouldSplit(playerCards)) return playSplitHandsAuto();
 
   let canDouble = bankroll >= currentBet * 2 - 0.001;
   while (true) {

@@ -28,7 +28,7 @@ A browser-based blackjack simulator built with HTML, CSS, and JavaScript.
 - The dealer checks for blackjack when showing a ten or an Ace
 - Machine mode reshuffles before every hand; Table mode keeps one shoe and reshuffles at about 75% penetration
 - Insurance pays 2:1 and, like splitting, is available in Table mode only
-- One split per hand; split Aces get one card each
+- Pairs can be re-split up to 4 hands, and doubling after a split is allowed; split Aces get one card each and can't be re-split
 - Auto and Fast modes always play basic strategy; Manual mode tells you whether each decision matched it
 
 ## Running
