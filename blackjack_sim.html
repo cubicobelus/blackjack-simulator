@@ -147,6 +147,7 @@
   }
   .stat .label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.5; }
   .stat .value { font-size: 1.1rem; color: var(--gold); margin-top: 3px; font-weight: 600; }
+  .stat .value .tc { font-size: 0.68rem; font-weight: 500; opacity: 0.7; margin-left: 4px; white-space: nowrap; }
   .stat .value.neg { color: var(--red); }
   .stat .value.pos { color: var(--green); }
   .stat .estimated-record { color: var(--white); opacity: 0.28; font-size: 0.92rem; font-weight: 500; }
@@ -261,6 +262,10 @@
     font-family: inherit;
   }
   .fast-panel label { font-size: 0.8rem; opacity: 0.7; }
+  .auto-speed { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; }
+  .auto-speed label, .auto-speed span { opacity: 0.7; }
+  .auto-speed input[type=range] { width: 140px; accent-color: var(--gold); }
+  .auto-speed span { min-width: 2.6em; }
 
   canvas { width: 100%; height: 160px; background: var(--panel); border: 1px solid var(--line); }
 
@@ -416,7 +421,7 @@
       <div class="estimated-record" id="stat-estimated-record">0-0-0</div>
     </div>
     <div class="stat"><div class="label">Accuracy</div><div class="value" id="stat-accuracy">&mdash;</div></div>
-    <div class="stat" id="stat-count-cell" style="cursor:pointer;" title="Click to toggle count visibility">
+    <div class="stat" id="stat-count-cell" style="cursor:pointer;" title="Running count, and true count (TC = running count / decks left, Table mode). Click to hide or show.">
       <div class="label">Count (tap to hide)</div><div class="value" id="stat-count">0</div>
     </div>
   </div>
@@ -449,6 +454,11 @@
   <div id="auto-controls" class="controls" style="display:none;">
     <button class="btn" id="btn-auto-start">Start Auto Play</button>
     <button class="btn secondary" id="btn-auto-stop" disabled>Stop</button>
+    <div class="auto-speed">
+      <label for="auto-speed">Time per hand</label>
+      <input type="range" id="auto-speed" min="0.2" max="3" step="0.1" value="1.1">
+      <span id="auto-speed-val">1.1s</span>
+    </div>
   </div>
 
   <div id="fast-controls" style="display:none;">
@@ -524,9 +534,18 @@ function countCard(card) {
   updateCountDisplay();
 }
 
+// True count = running count per deck left in the shoe. Only meaningful in Table mode;
+// Machine mode reshuffles every hand, so the count there never carries over.
+function trueCount() { return runningCount / Math.max(shoe.length / 52, 0.5); }
+
 function updateCountDisplay() {
   if (!countVisible) { el('stat-count').textContent = '•••'; return; }
-  el('stat-count').textContent = runningCount > 0 ? `+${runningCount}` : `${runningCount}`;
+  let html = runningCount > 0 ? `+${runningCount}` : `${runningCount}`;
+  if (gameType === 'table') {
+    const tc = Math.round(trueCount() * 10) / 10;
+    html += `<span class="tc">TC ${tc > 0 ? '+' : ''}${tc.toFixed(1)}</span>`;
+  }
+  el('stat-count').innerHTML = html;
 }
 buildShoe();
 
@@ -1304,15 +1323,28 @@ function playOneHandAuto() {
 }
 
 let autoTimer = null;
+let autoDelayMs = 1100;
+function autoTick() {
+  if (!autoRunning) return;
+  const ok = playOneHandAuto();
+  if (!ok) stopAuto();
+}
 el('btn-auto-start').addEventListener('click', () => {
   autoRunning = true;
   el('btn-auto-start').disabled = true;
   el('btn-auto-stop').disabled = false;
-  autoTimer = setInterval(() => {
-    if (!autoRunning) return;
-    const ok = playOneHandAuto();
-    if (!ok) stopAuto();
-  }, 1100);
+  autoTick(); // first hand right away, then one every autoDelayMs
+  if (autoRunning) autoTimer = setInterval(autoTick, autoDelayMs);
+});
+el('auto-speed').addEventListener('input', () => {
+  const secs = parseFloat(el('auto-speed').value);
+  if (!Number.isFinite(secs)) return;
+  autoDelayMs = Math.round(secs * 1000);
+  el('auto-speed-val').textContent = secs.toFixed(1) + 's';
+  if (autoRunning) { // apply the new pace to a run that's already going
+    clearInterval(autoTimer);
+    autoTimer = setInterval(autoTick, autoDelayMs);
+  }
 });
 el('btn-auto-stop').addEventListener('click', stopAuto);
 function stopAuto() {
