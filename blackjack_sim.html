@@ -561,9 +561,10 @@ function basicStrategyDecision(playerCards, dealerUpCard, canDouble) {
     if (total === 18) {
       if ([2,7,8].includes(upVal)) return 'stand';
       if ([9,10,11].includes(upVal)) return 'hit';
-      return canDouble ? 'double' : 'hit';
+      return canDouble ? 'double' : 'stand'; // A,7 vs 3-6: double, otherwise stand
     }
-    if (total >= 15 && total <= 17) return (canDouble && upVal >= 4 && upVal <= 6) ? 'double' : 'hit';
+    if (total === 17) return (canDouble && upVal >= 3 && upVal <= 6) ? 'double' : 'hit';
+    if (total >= 15 && total <= 16) return (canDouble && upVal >= 4 && upVal <= 6) ? 'double' : 'hit';
     if (total === 13 || total === 14) return (canDouble && upVal >= 5 && upVal <= 6) ? 'double' : 'hit';
     return 'hit';
   } else {
