@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blackjack Simulator</title>
 <style>
   :root {
@@ -460,7 +461,7 @@
   <div class="log" id="log"></div>
 
   <div class="footer-note">
-    Simplified rules: single hand per round, dealer stands on all 17s. Blackjack payout is selectable (2:1, 3:2, or 6:5). Martingale mode doubles the bet after a loss and resets to your chosen denomination after a win; a push repeats the same bet. Flat mode keeps the base bet constant regardless of outcome. A double-down win pays even money on the doubled bet (not double-counted). Splitting is available in Table mode only, one split per hand, split Aces get one card each. Auto and Fast modes always use standard basic strategy. Manual mode shows whether your decisions matched basic strategy.
+    Game info: single hand per round, 6-deck shoe. The dealer stands on all 17s and checks for blackjack when showing a ten or an Ace. Machine mode reshuffles before every hand; Table mode keeps one shoe and reshuffles at about 75% penetration. Blackjack payout is selectable (2:1, 3:2, or 6:5). Martingale mode doubles the bet after a loss and resets to your chosen denomination after a win; a push repeats the same bet. Flat mode keeps the base bet constant regardless of outcome. A double-down win pays even money on the doubled bet (not double-counted). Splitting is available in Table mode only, one split per hand, split Aces get one card each. Auto and Fast modes always use standard basic strategy. Manual mode shows whether your decisions matched basic strategy.
   </div>
   </div>
 
@@ -639,12 +640,15 @@ function gradeDecision(isCorrect) {
   updateStats();
 }
 
+const MAX_LOG_LINES = 2000;
+let logCount = 0;
 function logLine(text, cls) {
   const log = el('log');
   const line = document.createElement('div');
   if (cls) line.className = cls;
   line.textContent = text;
   log.appendChild(line);
+  if (++logCount > MAX_LOG_LINES) { log.removeChild(log.firstChild); logCount--; } // keep long runs light
   log.scrollTop = log.scrollHeight;
 }
 
@@ -1267,13 +1271,40 @@ function stopAuto() {
 }
 
 // ---------- Fast mode ----------
-el('btn-fast-run').addEventListener('click', () => {
-  const n = Math.max(1, Math.min(20000, parseInt(el('fast-count').value, 10) || 500));
-  for (let i = 0; i < n; i++) {
-    const ok = playOneHandAuto();
-    if (!ok) break;
-  }
+// Runs in short time slices so the page stays responsive; the button turns into Stop while running.
+let fastRunning = false, fastRunId = 0;
+function stopFast() {
+  if (!fastRunning) return;
+  fastRunning = false;
+  fastRunId++;
+  el('btn-fast-run').textContent = 'Run Simulation';
+  el('fast-count').disabled = false;
   drawChart();
+}
+el('btn-fast-run').addEventListener('click', () => {
+  if (fastRunning) { stopFast(); return; }
+  const n = Math.max(1, Math.min(20000, parseInt(el('fast-count').value, 10) || 500));
+  const btn = el('btn-fast-run');
+  const runId = ++fastRunId;
+  let done = 0;
+  fastRunning = true;
+  el('fast-count').disabled = true;
+  function step() {
+    if (runId !== fastRunId) return;
+    const t0 = Date.now();
+    let ended = false;
+    while (done < n && Date.now() - t0 < 15) {
+      if (!playOneHandAuto()) { ended = true; break; } // session over (can't cover the bet)
+      done++;
+    }
+    if (done >= n) ended = true;
+    if (ended) { stopFast(); return; }
+    drawChart();
+    btn.textContent = `Stop (${done} / ${n})`;
+    setTimeout(step, 0);
+  }
+  btn.textContent = `Stop (0 / ${n})`;
+  step();
 });
 
 function drawChart() {
@@ -1352,6 +1383,7 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.classList.add('active');
     mode = btn.dataset.mode;
     stopAuto();
+    stopFast();
     el('manual-controls').style.display = mode === 'manual' ? 'flex' : 'none';
     el('auto-controls').style.display = mode === 'auto' ? 'flex' : 'none';
     el('fast-controls').style.display = mode === 'fast' ? 'block' : 'none';
@@ -1470,14 +1502,25 @@ el('btn-custom-bet-apply').addEventListener('click', () => {
     el('custom-bet-note').textContent = '(finish this hand first)';
     return;
   }
-  const val = parseFloat(el('custom-bet-input').value);
-  if (!val || val <= 0) {
-    el('custom-bet-note').textContent = '(enter a valid amount)';
+  const raw = parseFloat(el('custom-bet-input').value);
+  if (!Number.isFinite(raw) || raw < 0.01) {
+    el('custom-bet-note').textContent = '(enter an amount of at least $0.01)';
     return;
   }
-  baseBet = Math.round(val * 100) / 100;
+  let val = Math.round(raw * 100) / 100;
+  let note = '';
+  if (val > bankroll) {
+    val = Math.floor(bankroll * 100) / 100;
+    note = `(capped to your bankroll, ${money(val)})`;
+  }
+  if (val < 0.01) {
+    el('custom-bet-note').textContent = '(bankroll too low to bet)';
+    return;
+  }
+  baseBet = val;
   currentBet = baseBet;
-  el('custom-bet-note').textContent = '';
+  el('custom-bet-input').value = val.toFixed(2);
+  el('custom-bet-note').textContent = note;
   updateStats();
 });
 
@@ -1514,6 +1557,7 @@ function unlockSetup() {
 
 function resetSession() {
   stopAuto();
+  stopFast();
   buildShoe();
   bankroll = 100.00;
   currentBet = baseBet;
@@ -1536,6 +1580,7 @@ function resetSession() {
   updateInsuranceButton();
   updateSplitButton();
   el('log').innerHTML = '';
+  logCount = 0;
   el('message').textContent = 'Press "Deal" to start.';
   clearFeedback();
   renderHands(false);

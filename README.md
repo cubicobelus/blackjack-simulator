@@ -22,6 +22,15 @@ A browser-based blackjack simulator built with HTML, CSS, and JavaScript.
 - Keyboard shortcuts
 - Insurance and pair splitting (table mode)
 
+## Game Info
+
+- 6-deck shoe; the dealer stands on all 17s
+- The dealer checks for blackjack when showing a ten or an Ace
+- Machine mode reshuffles before every hand; Table mode keeps one shoe and reshuffles at about 75% penetration
+- Insurance pays 2:1 and, like splitting, is available in Table mode only
+- One split per hand; split Aces get one card each
+- Auto and Fast modes always play basic strategy; Manual mode tells you whether each decision matched it
+
 ## Running
 
 **Play online:** use the link at the top, no download needed.
