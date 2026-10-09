@@ -22,9 +22,9 @@ A browser-based blackjack simulator built with HTML, CSS, and JavaScript.
 
 ## Running
 
-Simply open `simple_blackjack_sim.html` in any modern web browser.
+**Play online:** https://cubicobelus.github.io/blackjack-simulator/blackjack_sim.html
 
-Or visit the GitHub Pages deployment once enabled.
+**Or run it locally:** download `blackjack_sim.html` (open the file on GitHub and click "Download raw file", or use Code > Download ZIP) and open it in any modern web browser. It is a single self-contained file, so no install or internet connection is needed.
 
 ## Built With
 
