@@ -6,9 +6,9 @@ A browser-based blackjack simulator built with HTML, CSS, and JavaScript.
 
 ## Features
 
-- Manual, Auto, and Fast simulation modes
+- Manual, Auto (adjustable speed), and Fast simulation modes
 - Machine and real shoe gameplay
-- Running Hi-Lo card count
+- Running Hi-Lo count, plus true count in Table mode
 - Multiple betting systems
   - Martingale
   - Flat Betting
