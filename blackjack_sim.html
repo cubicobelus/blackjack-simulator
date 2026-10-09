@@ -493,6 +493,7 @@ const SUITS = ['♠','♥','♦','♣'];
 const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 let shoe = [];
 const NUM_DECKS = 6;
+const CUT_CARD_REMAINING = Math.round(NUM_DECKS * 52 * 0.25); // table reshuffles once ~75% of the shoe has been dealt
 
 function buildShoe() {
   shoe = [];
@@ -790,7 +791,13 @@ function startRound() {
   lockSetup();
   clearFeedback();
   el('table-area').classList.remove('result-win', 'result-loss', 'result-push');
-  if (gameType === 'machine') buildShoe(); // continuous shuffler: fresh shuffle every single hand
+  if (gameType === 'machine') {
+    buildShoe(); // continuous shuffler: fresh shuffle every single hand
+  } else if (shoe.length <= CUT_CARD_REMAINING) {
+    // cut card reached: shuffle between rounds, never in the middle of one
+    buildShoe();
+    logLine('Cut card reached — shoe reshuffled, count reset to 0.');
+  }
   playerCards = [drawCard(), drawCard()];
   dealerCards = [drawCard(), drawCard()];
   countCard(playerCards[0]);
